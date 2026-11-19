@@ -8,6 +8,11 @@
 FROM node:24-alpine AS build
 WORKDIR /app
 RUN corepack enable
+
+# 新增：让 corepack 和 pnpm 都从国内镜像下载
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
+ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
+
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
@@ -29,6 +34,8 @@ ENV NODE_ENV=production
 # root (see below), and the root's own home cannot be reached by
 # anybody else.
 ENV COREPACK_HOME=/usr/local/lib/corepack
+# 新增下面这一行，让 corepack 从国内镜像下载 pnpm
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
 RUN corepack enable && corepack prepare pnpm@10.33.3 --activate \
     && chmod -R a+rX /usr/local/lib/corepack
 
@@ -50,6 +57,9 @@ RUN corepack enable && corepack prepare pnpm@10.33.3 --activate \
 # back to the *machine's* clock — so every message was rendered at the
 # wrong hour for a reader in another country, and often on the wrong
 # day.
+
+# 给 Alpine 换国内源
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories
 RUN apk add --no-cache redis python3 py3-pip tzdata
 
 # The one dependency the collectors and the skill writer cannot do
