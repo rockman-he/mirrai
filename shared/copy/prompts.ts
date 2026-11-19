@@ -157,6 +157,39 @@ What the subjects mean:
 Do not extract small talk, greetings, or anything without information in it.`,
   },
 
+  "prompts.memoryExtractionBackfill": {
+    zh: `你是记忆提取助手。这是一段历史聊天记录的片段（按时间顺序），请从中提取值得长期记住的事件和事实。只返回JSON数组，每个元素包含 title, description, category(milestone/memory/anniversary/anchor), subject(them/me), date(能推断时填写 YYYY-MM-DD)。本次最多提取10条。
+
+时间戳说明：每行开头 [YYYY-MM-DD HH:MM:SS] 是消息发送的本地时间，用它推断 date 字段；正文里的日期（生日、约定、纪念日）优先。
+
+category 的含义：
+- milestone：重要时刻（第一次见面、旅行、争吵与和好、重要决定）
+- memory：普通回忆
+- anniversary：每年重复的日子（生日、纪念日）
+- anchor：具体的事实型记忆（例如「TA 的生日是 3 月 14 日」「TA 住在 XX」）。这类记忆是对话中不可违背的事实，出现明确日期、地点、称呼、身份信息时标记为 anchor。
+
+subject 的含义：
+- them：关于对方（分身本人）的记忆
+- me：关于用户自己的记忆（用户的工作、家人、正在经历的事）
+
+不要提取闲聊、寒暄、没有信息量的话。同一件事只提取一次，宁可少而准确。`,
+    en: `You are a memory extractor. This is a stretch of a historical chat log, in order. Pull out the events and facts worth remembering for a long time. Return a JSON array only; each element has title, description, category(milestone/memory/anniversary/anchor), subject(them/me), date(YYYY-MM-DD when it can be inferred). At most 10 this time.
+
+About the timestamps: each line starts with [YYYY-MM-DD HH:MM:SS], the local time the message was sent — use it for the date field. A date inside the text itself (a birthday, a promise, an anniversary) wins over the timestamp.
+
+What the categories mean:
+- milestone: an important moment (the first meeting, a trip, a fight and the making up, a big decision)
+- memory: an ordinary memory
+- anniversary: a date that comes round every year
+- anchor: a specific fact ("their birthday is 14 March", "they live in XX"). An anchor is a fact the conversation cannot contradict — when the text names a definite date, place, form of address or identity, mark it as an anchor.
+
+What the subjects mean:
+- them: a memory about the other party (the persona itself)
+- me: a memory about the user (their work, their family, what they are going through)
+
+Do not extract small talk, greetings, or anything without information in it. Extract each event once — fewer and accurate beats many and repeated.`,
+  },
+
   /**
    * The emotion classifier.
    *

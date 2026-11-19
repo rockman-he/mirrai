@@ -18,7 +18,8 @@ import {
   InsertResearchProfile, InsertCollectedMessage,
   InsertCollectionJob,
   InsertEvalCase, InsertEvalRun, InsertOutboundLetter, InsertFidelityFeedback,
-  userMoods, relationshipEvents, letters, memoryExtractions,
+  userMoods, relationshipEvents, letters, memoryBackfills, memoryExtractions,
+  MemoryBackfill, InsertMemoryBackfill,
   InsertUserMood, InsertRelationshipEvent, InsertLetter,
 } from "../drizzle/schema";
 import { BUILTIN_SCENE_DEFINITIONS } from "@shared/copy/scenes";
@@ -1067,6 +1068,7 @@ export async function deleteUserAccount(id: number) {
     await tx.delete(llmConfigs).where(eq(llmConfigs.userId, id));
     await tx.delete(letters).where(eq(letters.userId, id));
     await tx.delete(memories).where(eq(memories.userId, id));
+    await tx.delete(memoryBackfills).where(eq(memoryBackfills.userId, id));
     await tx.delete(memoryExtractions).where(eq(memoryExtractions.userId, id));
     await tx.delete(messages).where(eq(messages.userId, id));
     await tx.delete(outboundLetters).where(eq(outboundLetters.userId, id));
@@ -1380,6 +1382,7 @@ export async function deletePersona(id: number, userId: number) {
     await tx.delete(fidelityFeedback).where(and(eq(fidelityFeedback.personaId, id), eq(fidelityFeedback.userId, userId)));
     await tx.delete(graduationAssessments).where(and(eq(graduationAssessments.personaId, id), eq(graduationAssessments.userId, userId)));
     await tx.delete(memories).where(and(eq(memories.personaId, id), eq(memories.userId, userId)));
+    await tx.delete(memoryBackfills).where(and(eq(memoryBackfills.personaId, id), eq(memoryBackfills.userId, userId)));
     await tx.delete(memoryExtractions).where(and(eq(memoryExtractions.personaId, id), eq(memoryExtractions.userId, userId)));
     await tx.delete(messages).where(and(eq(messages.personaId, id), eq(messages.userId, userId)));
     await tx.delete(outboundLetters).where(and(eq(outboundLetters.personaId, id), eq(outboundLetters.userId, userId)));
@@ -2628,6 +2631,95 @@ export async function getLastExtractionAt(personaId: number, userId: number): Pr
   const rows = await db.select({ at: max(memoryExtractions.extractedAt) }).from(memoryExtractions)
     .where(and(eq(memoryExtractions.personaId, personaId), eq(memoryExtractions.userId, userId)));
   return rows[0]?.at ?? null;
+}
+
+/**
+ * The backfill run that is still alive for a persona, if any.
+ *
+ * "Alive" means running and heard from lately: a row whose progress has
+ * not moved for a while belongs to a process that has probably gone —
+ * a server restart mid-run leaves the row behind — and it must not
+ * block the next run for ever. The staleness window matches the
+ * extraction claim's.
+ */
+export async function findActiveMemoryBackfill(
+  personaId: number,
+  userId: number,
+  staleAfterMs = 10 * 60_000,
+): Promise<MemoryBackfill | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const staleBefore = new Date(Date.now() - staleAfterMs);
+  const rows = await db.select().from(memoryBackfills)
+    .where(and(
+      eq(memoryBackfills.personaId, personaId),
+      eq(memoryBackfills.userId, userId),
+      eq(memoryBackfills.status, "running"),
+      gte(memoryBackfills.updatedAt, staleBefore),
+    ))
+    .orderBy(desc(memoryBackfills.id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function createMemoryBackfill(input: InsertMemoryBackfill): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db.insert(memoryBackfills).values(input).returning({ id: memoryBackfills.id });
+  return rows[0]?.id ?? 0;
+}
+
+/** The backfill row, scoped to its owner like every other read here. */
+export async function getMemoryBackfillById(id: number, userId: number): Promise<MemoryBackfill | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(memoryBackfills)
+    .where(and(eq(memoryBackfills.id, id), eq(memoryBackfills.userId, userId)));
+  return rows[0] ?? null;
+}
+
+/** The most recent backfill of a persona, whatever state it is in. */
+export async function getLatestMemoryBackfill(personaId: number, userId: number): Promise<MemoryBackfill | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(memoryBackfills)
+    .where(and(eq(memoryBackfills.personaId, personaId), eq(memoryBackfills.userId, userId)))
+    .orderBy(desc(memoryBackfills.id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Records the progress of one finished batch.
+ *
+ * The row doubles as the resume point, so the write lands *after* the
+ * batch's memories do — a run killed between the two re-reads one batch,
+ * and re-reading is safe; the reverse order would skip one for ever.
+ */
+export async function updateMemoryBackfillProgress(
+  id: number,
+  userId: number,
+  doneBatches: number,
+  memoriesAdded: number,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(memoryBackfills)
+    .set({ doneBatches, memoriesAdded, updatedAt: new Date() })
+    .where(and(eq(memoryBackfills.id, id), eq(memoryBackfills.userId, userId)));
+}
+
+export async function setMemoryBackfillStatus(
+  id: number,
+  userId: number,
+  status: string,
+  error?: string,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(memoryBackfills)
+    .set({ status, error: error ?? null, updatedAt: new Date() })
+    .where(and(eq(memoryBackfills.id, id), eq(memoryBackfills.userId, userId)));
 }
 
 /**

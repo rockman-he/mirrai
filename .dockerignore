@@ -9,6 +9,8 @@ build-macos
 !.env.example
 uploads
 *.log
+# 本地聊天记录：私有数据，不进构建上下文，更不进镜像。
+chat_record/
 # The generated skill packages and the compiled Python.
 #
 # They are not in the repository either — but the image was built

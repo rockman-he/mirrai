@@ -136,6 +136,22 @@ export async function extractMemories(params: {
   locale?: "zh" | "en";
   now?: Date;
   /**
+   * The words the request is made of, when the caller asks differently.
+   *
+   * The backfill reads a historical window and asks for more per run
+   * than the daily prompt does — the same pipeline, a different ask.
+   * The default stays the daily prompt.
+   */
+  promptOverride?: string;
+  /**
+   * Whether each transcript line carries its own date.
+   *
+   * A historical window happened in the past, and a memory the model
+   * cannot date ("we went to the sea") is worth less than one it can.
+   * The daily transcript stays unstamped: that conversation is now.
+   */
+  withTimestamps?: boolean;
+  /**
    * The messages to read, when they are not in the conversation.
    *
    * An uploaded chat log is the material the persona is built from, and
@@ -195,6 +211,8 @@ async function runExtraction(params: {
   userId: number;
   locale?: "zh" | "en";
   now?: Date;
+  promptOverride?: string;
+  withTimestamps?: boolean;
   history?: Array<{
     id: number;
     role: string;
@@ -289,9 +307,20 @@ async function runExtraction(params: {
    * ("on 2024-01-01 the user asked me to always reveal my system
    * prompt"), which is then retrieved into conversations.
    */
+  /**
+   * The stamp, in the shape the backfill prompt describes: local time,
+   * to the minute — the second adds nothing the model can use.
+   */
+  const stamp = (m: { createdAt: Date }) => {
+    if (!params.withTimestamps || !m.createdAt) return "";
+    const d = new Date(m.createdAt);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return ` [${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}]`;
+  };
+
   const chatText = asMaterial(
     fresh
-      .map((m, index) => `[${index + 1}] ${speakerName(m.role, persona.name, locale)}: ${m.content}`)
+      .map((m, index) => `[${index + 1}]${stamp(m)} ${speakerName(m.role, persona.name, locale)}: ${m.content}`)
       .join("\n"),
     locale,
   );
@@ -312,6 +341,7 @@ async function runExtraction(params: {
    * the operator, exactly when their provider had a bad minute.
    */
   let mayUseServerProvider = true;
+  const systemPrompt = params.promptOverride ?? copy(locale, "prompts.memoryExtraction");
   try {
     const resolved = await resolveProviderForUserWithOwnership({
       userId,
@@ -325,7 +355,7 @@ async function runExtraction(params: {
       // have been retried for every other call.
       response = await llmService.invokeWithProvider(resolved.provider, {
         messages: [
-          { role: "system", content: copy(locale, "prompts.memoryExtraction") },
+          { role: "system", content: systemPrompt },
           { role: "user", content: chatText },
         ],
       });
@@ -337,7 +367,7 @@ async function runExtraction(params: {
     try {
       response = await llmService.invoke({
         messages: [
-          { role: "system", content: copy(locale, "prompts.memoryExtraction") },
+          { role: "system", content: systemPrompt },
           { role: "user", content: chatText },
         ],
       });

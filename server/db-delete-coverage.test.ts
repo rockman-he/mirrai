@@ -54,8 +54,14 @@ function declaredTables(src: string): TableInfo[] {
 
 /** The tables a delete function removes, by their Drizzle variable name. */
 function tablesDeletedIn(fnName: string): Set<string> {
+  /**
+   * The line endings vary with the checkout — `core.autocrlf` turns the
+   * working tree into CRLF on Windows, and a regex that insists on `\n}`
+   * matched nothing there, so every table looked un-cleaned. The brace
+   * is matched against either ending.
+   */
   const match = new RegExp(
-    `export async function ${fnName}\\([\\s\\S]*?\\n\\}\\n`,
+    `export async function ${fnName}\\([\\s\\S]*?\\r?\\n\\}\\r?\\n`,
   ).exec(db);
   if (!match) return new Set();
   return new Set(Array.from(match[0].matchAll(/tx\.delete\((\w+)\)/g)).map((m) => m[1]));
@@ -84,7 +90,7 @@ describe("deleting a user cleans up after them", () => {
   });
 
   it("runs in a transaction", () => {
-    const match = /export async function deleteUserAccount\([\s\S]*?\}\n/.exec(db);
+    const match = /export async function deleteUserAccount\([\s\S]*?\r?\}\r?\n/.exec(db);
     expect(match?.[0]).toContain("withTransaction");
   });
 });
@@ -111,7 +117,7 @@ describe("deleting a persona cleans up after it", () => {
   });
 
   it("runs in a transaction", () => {
-    const match = /export async function deletePersona\([\s\S]*?\}\n/.exec(db);
+    const match = /export async function deletePersona\([\s\S]*?\r?\}\r?\n/.exec(db);
     expect(match?.[0]).toContain("withTransaction");
   });
 });
@@ -125,12 +131,12 @@ describe("deleting a user removes their files from the disk", () => {
    * was gone. Nothing read them again and nothing cleaned them up.
    */
   it("removes the uploaded files of the account", () => {
-    const match = /export async function deleteUserAccount\([\s\S]*?\}\n/.exec(db);
+    const match = /export async function deleteUserAccount\([\s\S]*?\r?\}\r?\n/.exec(db);
     expect(match?.[0]).toContain("removeStoredFiles");
   });
 
   it("removes the uploaded files of the persona", () => {
-    const match = /export async function deletePersona\([\s\S]*?\}\n/.exec(db);
+    const match = /export async function deletePersona\([\s\S]*?\r?\}\r?\n/.exec(db);
     expect(match?.[0]).toContain("removeStoredFiles");
   });
 
@@ -139,7 +145,7 @@ describe("deleting a user removes their files from the disk", () => {
      * The keys come from the files table and from the media of the
      * messages — so they have to be read before the rows are deleted.
      */
-    const match = /export async function deleteUserAccount\([\s\S]*?\}\n/.exec(db);
+    const match = /export async function deleteUserAccount\([\s\S]*?\r?\}\r?\n/.exec(db);
     const body = match?.[0] ?? "";
     const collected = body.indexOf("collectStoredFiles");
     const deleted = body.indexOf("tx.delete(personaFiles)");

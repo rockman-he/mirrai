@@ -28,6 +28,7 @@ import { formatDayKey, formatInstantInZone, formatTimeInZone } from "@/lib/dates
 import DigitalPersonaBadge from "@/components/DigitalPersonaBadge";
 import { EMOTIONS, EMOTION_KEYS, emotionColor, type EmotionKey } from "@/lib/emotions";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { MemoryBackfill } from "@/components/MemoryBackfill";
 
 /**
  * The largest picture the chat will send.
@@ -2240,6 +2241,8 @@ const CATEGORY_LABELS: Record<string, { labelKey: "chat.memory.categories.memory
 function MemoryTimeline({ personaId, onClose, onJumpTo }: { personaId: number; onClose: () => void; onJumpTo?: (messageId: number) => void }) {
   const { t, locale } = useLocale();
   const confirm = useConfirm();
+  /** The backfill view takes the panel over while it is open. */
+  const [showBackfill, setShowBackfill] = useState(false);
   const { data: memories, refetch, isError: memoriesFailed, isLoading: memoriesLoading } =
     trpc.memory.list.useQuery({ personaId });
   const memoryItems = memories?.items ?? [];
@@ -2319,8 +2322,12 @@ function MemoryTimeline({ personaId, onClose, onJumpTo }: { personaId: number; o
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t("chat.memoryTimeline")}
         className="relative ml-auto w-full max-w-sm bg-card border-l border-border h-full flex flex-col animate-slide-in-right">
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h3 className="font-display font-semibold text-foreground">{t("chat.memoryTimeline")}</h3>
+          <h3 className="font-display font-semibold text-foreground">{showBackfill ? t("chat.memory.backfill.title") : t("chat.memoryTimeline")}</h3>
           <div className="flex items-center gap-2">
+            <button onClick={() => setShowBackfill((v) => !v)}
+              className="text-xs px-3 py-1.5 rounded-md border border-border text-foreground hover:bg-muted transition-colors">
+              {t("chat.memory.backfill.open")}
+            </button>
             <button onClick={() => extractMutation.mutate({ personaId })} disabled={extractMutation.isPending}
               className="text-xs px-3 py-1.5 rounded-md border border-cinnabar/30 text-cinnabar hover:bg-cinnabar/5 transition-colors disabled:opacity-50">
               {extractMutation.isPending ? t("chat.memory.extracting") : t("chat.memory.extract")}
@@ -2329,6 +2336,10 @@ function MemoryTimeline({ personaId, onClose, onJumpTo }: { personaId: number; o
           </div>
         </div>
 
+        {showBackfill ? (
+          <MemoryBackfill personaId={personaId} onClose={() => setShowBackfill(false)} />
+        ) : (
+        <>
         <div className="flex-1 overflow-y-auto p-4">
           {/**
            * A failure is not an empty list.
@@ -2493,6 +2504,8 @@ function MemoryTimeline({ personaId, onClose, onJumpTo }: { personaId: number; o
             <Plus className="w-4 h-4" />{t("chat.memory.add")}
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

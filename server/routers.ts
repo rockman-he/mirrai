@@ -6,6 +6,8 @@ import { detectCrisis } from "./safety/crisis";
 import { withPersonaDataLock } from "./_core/lock";
 import { requestAbortSignal } from "./_core/context";
 import { extractMemories } from "./chat/memory-extract";
+import { previewBackfill, resumeMemoryBackfill, startBackfillFromFile } from "./chat/memory-backfill";
+import { storageReadText } from "./storage";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router, rateLimit } from "./_core/trpc";
 import { z } from "zod";
@@ -35,6 +37,7 @@ import {
   getUserById, bumpUserTokenVersion, updateUserGraduationMode, updateUserTrajectoryAssessment,
   getUserTimezone,
   createMemory, getMemoriesByPersonaId, countMemories, getMemoryTitles, deleteMemory, updateMemory,
+  getLatestMemoryBackfill, getMemoryBackfillById, setMemoryBackfillStatus,
   createFidelityFeedback, listFidelityFeedbackForMessage, listFidelityFeedbackForPersona,
   getMemoriesByFactKey, supersedeMemory, getMessageById,
   countDiaryEntries,
@@ -3929,6 +3932,90 @@ export const appRouter = router({
           // which is a claim about the conversation and was not true.
           running: result.running === true,
         };
+      }),
+
+    /**
+     * The memory backfill: reading an uploaded chat log into memories,
+     * batch by batch. The preview counts what a file would cost before
+     * the caller pays it; the start runs in the background; the row is
+     * the progress, so the interface polls it rather than the run.
+     */
+    backfillPreview: protectedProcedure
+      .input(z.object({ personaId: z.number(), fileId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const file = await getPersonaFileById(input.fileId, ctx.user.id);
+        if (!file || file.personaId !== input.personaId) {
+          throw new TRPCError({ code: "NOT_FOUND" });
+        }
+        if (file.fileType !== "chat_txt" && file.fileType !== "chat_csv") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: copy(ctx.locale, "errors.backfillNotChat") });
+        }
+        const text = await storageReadText(file.fileKey);
+        return previewBackfill(text);
+      }),
+
+    backfillStart: protectedProcedure.use(rateLimit(RATE_LIMITS.llmHeavy))
+      .input(z.object({ personaId: z.number(), fileId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const result = await startBackfillFromFile({
+          personaId: input.personaId,
+          userId: ctx.user.id,
+          fileId: input.fileId,
+          locale: ctx.locale,
+        });
+        // A refusal on whose persona or whose file is a lookup that
+        // found somebody else's things; the rest are states the
+        // interface shows.
+        if (!result.started && (result.reason === "persona" || result.reason === "file")) {
+          throw new TRPCError({ code: "NOT_FOUND" });
+        }
+        if (!result.started && result.reason === "fileType") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: copy(ctx.locale, "errors.backfillNotChat") });
+        }
+        // The run's own promise cannot cross the wire — the client
+        // follows the progress row instead.
+        const { done, ...report } = result;
+        return report;
+      }),
+
+    backfillStatus: protectedProcedure
+      .input(z.object({ personaId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        return getLatestMemoryBackfill(input.personaId, ctx.user.id);
+      }),
+
+    backfillCancel: protectedProcedure
+      .input(z.object({ backfillId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const row = await getMemoryBackfillById(input.backfillId, ctx.user.id);
+        if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+        // A cancel of a run that is already over does nothing — and says
+        // so, rather than pretending it stopped something.
+        if (row.status !== "running") return { success: false };
+        await setMemoryBackfillStatus(input.backfillId, ctx.user.id, "cancelled");
+        return { success: true };
+      }),
+
+    backfillResume: protectedProcedure.use(rateLimit(RATE_LIMITS.llmHeavy))
+      .input(z.object({ backfillId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const result = await resumeMemoryBackfill({
+          backfillId: input.backfillId,
+          userId: ctx.user.id,
+          locale: ctx.locale,
+        });
+        if (!result.resumed && result.reason === "missing") {
+          throw new TRPCError({ code: "NOT_FOUND" });
+        }
+        if (!result.resumed && (result.reason === "notResumable" || result.reason === "persona")) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: copy(ctx.locale, "errors.backfillNotResumable") });
+        }
+        if (!result.resumed && result.reason === "file") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: copy(ctx.locale, "errors.backfillFileGone") });
+        }
+        // As with the start: the promise stays behind, the row travels.
+        const { done, ...report } = result;
+        return report;
       }),
   }),
 

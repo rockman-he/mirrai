@@ -68,6 +68,20 @@ export async function storageGet(
 }
 
 /**
+ * The text of a stored file.
+ *
+ * The memory backfill reads the *whole* uploaded log — the extracted
+ * text on the row is capped, but the bytes on disk are not. The key is
+ * validated the same way it is on the way in, so this can only ever
+ * read a file inside the uploads directory.
+ */
+export async function storageReadText(relKey: string): Promise<string> {
+  const key = relKey.replace(/^\/+/, "");
+  const filePath = resolveUploadPath(ENV.uploadDir, key);
+  return fs.promises.readFile(filePath, "utf-8");
+}
+
+/**
  * Resolves an upload URL to an absolute path on disk, or null when the path
  * is not inside the uploads directory.
  */

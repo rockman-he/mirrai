@@ -538,6 +538,34 @@ export const memories = pgTable("memories", {
 }));
 
 /**
+ * A run that reads an uploaded chat log batch by batch and stores what
+ * it finds as memories.
+ *
+ * The row is the progress: which batch the run reached and how much it
+ * added, so an interrupted run is taken up again rather than paid for
+ * twice. At most one runs per persona — the start checks for a live one.
+ */
+export const memoryBackfills = pgTable("memory_backfills", {
+  id: serial("id").primaryKey(),
+  personaId: integer("personaId").notNull(),
+  userId: integer("userId").notNull(),
+  fileId: integer("fileId").notNull(),
+  /** pending | running | done | failed | cancelled */
+  status: varchar("status", { length: 16 }).default("pending").notNull(),
+  totalBatches: integer("totalBatches").default(0).notNull(),
+  doneBatches: integer("doneBatches").default(0).notNull(),
+  memoriesAdded: integer("memoriesAdded").default(0).notNull(),
+  error: text("error"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+}, (table) => ({
+  personaUserIdx: index("memory_backfills_persona_user_idx").on(table.personaId, table.userId),
+}));
+
+export type MemoryBackfill = typeof memoryBackfills.$inferSelect;
+export type InsertMemoryBackfill = typeof memoryBackfills.$inferInsert;
+
+/**
  * When the memories were last extracted.
  *
  * The extraction is a fact about a conversation, so it is kept with the

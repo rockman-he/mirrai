@@ -231,6 +231,18 @@ export const ERRORS = {
     zh: "没有聊天记录可供提取",
     en: "There are no messages to extract from",
   },
+  "errors.backfillNotChat": {
+    zh: "该文件不是聊天记录，无法提取记忆",
+    en: "That file is not a chat log, so there is nothing to extract into memories",
+  },
+  "errors.backfillNotResumable": {
+    zh: "该任务当前不能续跑",
+    en: "That run cannot be taken up again right now",
+  },
+  "errors.backfillFileGone": {
+    zh: "原始文件已不存在，无法续跑",
+    en: "The original file is gone, so the run cannot continue",
+  },
   "errors.diaryExists": {
     zh: "该日期已有日记",
     en: "There is already a diary for that date",

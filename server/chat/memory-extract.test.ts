@@ -107,6 +107,69 @@ describe("the memory extraction", () => {
     expect(releaseMemoryExtraction).toHaveBeenCalledWith(1, 1);
   });
 
+  it("lets a caller put its own words in the request", async () => {
+    /**
+     * The backfill reads a historical window and asks for more per run
+     * than the daily prompt does — the same pipeline, a different ask.
+     */
+    invoke.mockResolvedValue("[]");
+
+    await extractMemories({
+      persona,
+      userId: 1,
+      now: NOW,
+      promptOverride: "自定义提取指令",
+    });
+
+    const system = invoke.mock.calls[0][0].messages[0].content;
+    expect(system).toBe("自定义提取指令");
+  });
+
+  it("keeps the standard prompt when no override is given", async () => {
+    invoke.mockResolvedValue("[]");
+
+    await extractMemories({ persona, userId: 1, now: NOW });
+
+    const system = invoke.mock.calls[0][0].messages[0].content;
+    expect(system).not.toBe("自定义提取指令");
+    expect(system.length).toBeGreaterThan(20);
+  });
+
+  it("stamps the transcript lines with their dates when asked", async () => {
+    /**
+     * A historical window carries the date an event happened — the
+     * model can only date a memory ("去年八月去看的海") if the line
+     * says when it was said. The daily transcript has no dates: the
+     * conversation is now.
+     */
+    invoke.mockResolvedValue("[]");
+
+    await extractMemories({
+      persona,
+      userId: 1,
+      now: NOW,
+      withTimestamps: true,
+      history: [
+        { id: 1, role: "user", content: "我们八月去看海吧", createdAt: new Date("2026-08-10T15:30:00") },
+        { id: 2, role: "assistant", content: "好呀", createdAt: new Date("2026-08-10T15:31:00") },
+      ],
+    });
+
+    const transcript = invoke.mock.calls[0][0].messages[1].content;
+    expect(transcript).toContain("[1] [2026-08-10 15:30] ");
+    expect(transcript).toContain("[2] [2026-08-10 15:31] ");
+  });
+
+  it("leaves the daily transcript unstamped", async () => {
+    invoke.mockResolvedValue("[]");
+
+    await extractMemories({ persona, userId: 1, now: NOW });
+
+    const transcript = invoke.mock.calls[0][0].messages[1].content;
+    expect(transcript).toContain("[1] ");
+    expect(transcript).not.toContain("[2026-");
+  });
+
   it("gives the claim back even when the run fails", async () => {
     invoke.mockRejectedValue(new Error("the provider is down"));
 
