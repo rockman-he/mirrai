@@ -4,6 +4,18 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { X } from "lucide-react";
 
+/** The largest file the app accepts, mirrored from the upload page. */
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 /**
  * Reading an uploaded chat log into memories, in the memory panel.
  *
@@ -38,6 +50,48 @@ export function MemoryBackfill({ personaId, onClose }: { personaId: number; onCl
   const utils = trpc.useUtils();
   const refreshStatus = () => {
     utils.memory.backfillStatus.invalidate().catch(() => undefined);
+  };
+
+  /**
+   * Uploading from here, not from the lobby.
+   *
+   * A distilled persona has no upload entry anywhere — the lobby card
+   * became a chat button and the edit page hides its link once the
+   * analysis is ready. The file this panel wants is the one that is
+   * missing, so the panel carries its own upload.
+   */
+  const upload = trpc.file.upload.useMutation({
+    onSuccess: (data: any) => {
+      utils.file.list.invalidate().catch(() => undefined);
+      setFileId(data.fileId);
+      toast.success(t("chat.memory.backfill.uploadDone"));
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleLocalFile = async (picked: FileList | null) => {
+    const file = picked?.[0];
+    if (!file) return;
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    // The kind is checked before the file is read, not after.
+    if (ext !== "txt" && ext !== "csv") {
+      toast.error(t("chat.memory.backfill.uploadBadType"));
+      return;
+    }
+    const fileType = ext === "csv" ? "chat_csv" : "chat_txt";
+    try {
+      const content = await fileToBase64(file);
+      await upload.mutateAsync({
+        personaId,
+        fileName: file.name,
+        fileType,
+        fileSize: file.size,
+        fileContent: content,
+        mimeType: fileType === "chat_csv" ? "text/csv" : "text/plain",
+      });
+    } catch {
+      /* the mutation's onError already said what happened */
+    }
   };
 
   const start = trpc.memory.backfillStart.useMutation({
@@ -123,6 +177,22 @@ export function MemoryBackfill({ personaId, onClose }: { personaId: number; onCl
                       <option key={f.id} value={f.id}>{f.originalName}</option>
                     ))}
                   </select>
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs text-muted-foreground">
+                    {upload.isPending ? t("chat.memory.backfill.uploading") : t("chat.memory.backfill.uploadLabel")}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".txt,.csv"
+                    disabled={upload.isPending}
+                    onChange={(e) => {
+                      handleLocalFile(e.target.files);
+                      e.target.value = "";
+                    }}
+                    className="w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-foreground"
+                  />
                 </label>
 
                 {previewing ? (

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { translate } from "@/i18n";
 
@@ -17,21 +17,45 @@ const invalidate = vi.fn().mockResolvedValue(undefined);
 const startMutate = vi.fn();
 const cancelMutate = vi.fn();
 const resumeMutate = vi.fn();
+const uploadMutate = vi.fn();
 
-const files = [
+let files = [
   { id: 1, personaId: 1, fileType: "chat_txt", originalName: "full-log.txt", fileSize: 3_900_000 },
   { id: 2, personaId: 1, fileType: "image", originalName: "photo.png", fileSize: 800 },
   { id: 3, personaId: 1, fileType: "chat_csv", originalName: "log.csv", fileSize: 12_000 },
 ];
+
+/**
+ * The invalidation is a refetch: the list the query returns afterwards
+ * holds the file the upload just created.
+ */
+const invalidateFiles = vi.fn().mockImplementation(() => {
+  files = [...files, { id: 9, personaId: 1, fileType: "chat_txt", originalName: "uploaded.txt", fileSize: 100 }];
+  return Promise.resolve();
+});
 
 let preview: { messages: number; batches: number; estimatedCalls: number } | undefined;
 let status: { status: string; doneBatches: number; totalBatches: number; memoriesAdded: number; error: string | null } | null = null;
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
-    useUtils: () => ({ memory: { backfillStatus: { invalidate } } }),
+    useUtils: () => ({
+      memory: { backfillStatus: { invalidate } },
+      file: { list: { invalidate: invalidateFiles } },
+    }),
     file: {
       list: { useQuery: () => ({ data: files }) },
+      upload: {
+        useMutation: (opts: any) => ({
+          mutateAsync: (input: any) => {
+            uploadMutate(input);
+            const result = { fileId: 9, fileUrl: "/uploads/x" };
+            if (opts?.onSuccess) opts.onSuccess(result);
+            return Promise.resolve(result);
+          },
+          isPending: false,
+        }),
+      },
     },
     memory: {
       backfillPreview: {
@@ -61,7 +85,17 @@ vi.mock("@/contexts/LocaleContext", () => ({
 import { MemoryBackfill } from "./MemoryBackfill";
 
 beforeEach(() => {
-  for (const fn of [invalidate, startMutate, cancelMutate, resumeMutate]) fn.mockClear();
+  for (const fn of [invalidate, invalidateFiles, startMutate, cancelMutate, resumeMutate, uploadMutate]) fn.mockClear();
+  invalidateFiles.mockClear();
+  invalidateFiles.mockImplementation(() => {
+    files = [...files, { id: 9, personaId: 1, fileType: "chat_txt", originalName: "uploaded.txt", fileSize: 100 }];
+    return Promise.resolve();
+  });
+  files = [
+    { id: 1, personaId: 1, fileType: "chat_txt", originalName: "full-log.txt", fileSize: 3_900_000 },
+    { id: 2, personaId: 1, fileType: "image", originalName: "photo.png", fileSize: 800 },
+    { id: 3, personaId: 1, fileType: "chat_csv", originalName: "log.csv", fileSize: 12_000 },
+  ];
   preview = undefined;
   status = null;
 });
@@ -119,5 +153,50 @@ describe("the memory backfill panel", () => {
     render(<MemoryBackfill personaId={1} onClose={() => {}} />);
     expect(screen.getByText("提取完成，共写入 612 条记忆。")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "继续提取" })).not.toBeInTheDocument();
+  });
+});
+
+describe("uploading a local file from the panel", () => {
+  const pickLocal = async (file: File) => {
+    const user = userEvent.setup();
+    render(<MemoryBackfill personaId={1} onClose={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, file);
+    return input;
+  };
+
+  it("uploads a chosen txt file and picks it as the new file", async () => {
+    const file = new File(["[2026-08-10 15:30:00] 我：测试"], "原始记录.txt", { type: "text/plain" });
+
+    await pickLocal(file);
+
+    await waitFor(() => {
+      expect(uploadMutate).toHaveBeenCalledWith(expect.objectContaining({
+        personaId: 1,
+        fileName: "原始记录.txt",
+        fileType: "chat_txt",
+        fileSize: file.size,
+        mimeType: "text/plain",
+      }));
+    });
+    // The base64 body is what crosses the wire, not the raw file — the
+    // bytes of the file as the reader encoded them, UTF-8 and all.
+    const content = "[2026-08-10 15:30:00] 我：测试";
+    const expected = btoa(Array.from(new TextEncoder().encode(content), (b) => String.fromCharCode(b)).join(""));
+    expect(uploadMutate.mock.calls[0][0].fileContent).toBe(expected);
+    // The uploaded file becomes the one the panel works with.
+    await waitFor(() => {
+      expect(invalidateFiles).toHaveBeenCalled();
+      const select = screen.getByRole("combobox") as HTMLSelectElement;
+      expect(select.value).toBe("9");
+    });
+  });
+
+  it("refuses a file that is not a chat log, before reading it", async () => {
+    const file = new File(["binary"], "photo.png", { type: "image/png" });
+
+    await pickLocal(file);
+
+    expect(uploadMutate).not.toHaveBeenCalled();
   });
 });
