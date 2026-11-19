@@ -25,7 +25,7 @@ function fileToBase64(file: File): Promise<string> {
  * it failed (why, and a button to pick it up from where it stopped).
  */
 export function MemoryBackfill({ personaId, onClose }: { personaId: number; onClose: () => void }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
 
   const { data: files } = trpc.file.list.useQuery({ personaId });
   const chatFiles = useMemo(
@@ -125,6 +125,17 @@ export function MemoryBackfill({ personaId, onClose }: { personaId: number; onCl
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <p className="text-xs text-muted-foreground leading-relaxed">{t("chat.memory.backfill.intro")}</p>
+
+        {(status as any)?.coveredUntil && (
+          <div className="text-xs p-2.5 rounded-md bg-muted/50 border border-border space-y-0.5">
+            <div className="text-foreground">
+              {t("chat.memory.backfill.coveredUntil", {
+                date: new Date((status as any).coveredUntil).toLocaleDateString(locale),
+              })}
+            </div>
+            <div className="text-muted-foreground">{t("chat.memory.backfill.coveredHint")}</div>
+          </div>
+        )}
 
         {running ? (
           <div className="space-y-3">

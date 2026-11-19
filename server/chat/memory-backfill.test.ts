@@ -179,9 +179,9 @@ describe("runBackfillBatches", () => {
 
     await runBackfillBatches({ backfillId: 77, persona, userId: 1, locale: "zh", batches: [batch(), batch(), batch()], pauseMs: 0 });
 
-    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(1, 77, 1, 1, 2);
-    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(2, 77, 1, 2, 4);
-    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(3, 77, 1, 3, 6);
+    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(1, 77, 1, 1, 2, null);
+    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(2, 77, 1, 2, 4, null);
+    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(3, 77, 1, 3, 6, null);
     expect(setMemoryBackfillStatus).toHaveBeenLastCalledWith(77, 1, "done");
   });
 
@@ -201,7 +201,7 @@ describe("runBackfillBatches", () => {
 
     await runBackfillBatches({ backfillId: 77, persona, userId: 1, locale: "zh", batches: [batch(), batch(), batch()], pauseMs: 0 });
 
-    expect(updateMemoryBackfillProgress).toHaveBeenCalledWith(77, 1, 1, 1);
+    expect(updateMemoryBackfillProgress).toHaveBeenCalledWith(77, 1, 1, 1, null);
     expect(setMemoryBackfillStatus).toHaveBeenCalledWith(77, 1, "failed", "provider down");
     // The third batch was never asked.
     expect(extractMemories).toHaveBeenCalledTimes(2);
@@ -213,8 +213,8 @@ describe("runBackfillBatches", () => {
     });
 
     expect(extractMemories).toHaveBeenCalledTimes(2);
-    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(1, 77, 1, 4, expect.any(Number));
-    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(2, 77, 1, 5, expect.any(Number));
+    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(1, 77, 1, 4, expect.any(Number), null);
+    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(2, 77, 1, 5, expect.any(Number), null);
   });
 });
 
@@ -299,7 +299,7 @@ describe("resumeMemoryBackfill", () => {
     await result.done;
     // The second batch was the only one left; the memories counted
     // before stay counted.
-    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(1, 77, 1, 2, expect.any(Number));
+    expect(updateMemoryBackfillProgress).toHaveBeenNthCalledWith(1, 77, 1, 2, expect.any(Number), expect.anything());
     expect(setMemoryBackfillStatus).toHaveBeenLastCalledWith(77, 1, "done");
   });
 
@@ -315,5 +315,24 @@ describe("resumeMemoryBackfill", () => {
     expect(result.resumed).toBe(false);
     expect(result.reason).toBe("file");
     expect(setMemoryBackfillStatus).toHaveBeenCalledWith(77, 1, "failed", "ENOENT");
+  });
+});
+
+describe("the coverage record", () => {
+  it("records how far the memories reach: the last message the run read", async () => {
+    const { batchChatLog, parseChatLog } = await import("./log-parse");
+    const batches = batchChatLog(parseChatLog(SAMPLE));
+
+    await runBackfillBatches({ backfillId: 77, persona, userId: 1, locale: "zh", batches, pauseMs: 0 });
+
+    // The last batch of the sample ends with TA's birthday message.
+    const lastCall = updateMemoryBackfillProgress.mock.calls.at(-1);
+    expect(lastCall![4]).toEqual(new Date(2026, 8, 3, 9, 0, 0));
+  });
+
+  it("leaves the coverage empty for batches without timestamps", async () => {
+    await runBackfillBatches({ backfillId: 77, persona, userId: 1, locale: "zh", batches: [batch()], pauseMs: 0 });
+
+    expect(updateMemoryBackfillProgress).toHaveBeenLastCalledWith(77, 1, 1, 1, null);
   });
 });

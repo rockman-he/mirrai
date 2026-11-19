@@ -2701,12 +2701,29 @@ export async function updateMemoryBackfillProgress(
   userId: number,
   doneBatches: number,
   memoriesAdded: number,
+  coveredUntil: Date | null,
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.update(memoryBackfills)
-    .set({ doneBatches, memoriesAdded, updatedAt: new Date() })
+    .set({ doneBatches, memoriesAdded, coveredUntil, updatedAt: new Date() })
     .where(and(eq(memoryBackfills.id, id), eq(memoryBackfills.userId, userId)));
+}
+
+/**
+ * How far the persona's memories already reach, across every run.
+ *
+ * The maximum, not the latest run's: a persona whose runs covered
+ * September then November then an older file is covered to November —
+ * that is what the user must not pay to read again. A cancelled run's
+ * processed batches count too: those memories exist.
+ */
+export async function getBackfillCoverage(personaId: number, userId: number): Promise<Date | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select({ at: max(memoryBackfills.coveredUntil) }).from(memoryBackfills)
+    .where(and(eq(memoryBackfills.personaId, personaId), eq(memoryBackfills.userId, userId)));
+  return rows[0]?.at ?? null;
 }
 
 export async function setMemoryBackfillStatus(

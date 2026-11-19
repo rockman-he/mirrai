@@ -164,7 +164,10 @@ export async function runBackfillBatches(params: {
       });
       done += 1;
       added += result?.added?.length ?? 0;
-      await updateMemoryBackfillProgress(backfillId, userId, done, added);
+      // How far the memories reach: the last message of the batch just
+      // read. The interface shows it before the next run, so the user
+      // uploads only what comes after it.
+      await updateMemoryBackfillProgress(backfillId, userId, done, added, batches[i].end);
 
       if (pauseMs > 0 && i < batches.length - 1) {
         await new Promise((resolve) => setTimeout(resolve, pauseMs));

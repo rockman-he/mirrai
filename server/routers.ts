@@ -37,7 +37,7 @@ import {
   getUserById, bumpUserTokenVersion, updateUserGraduationMode, updateUserTrajectoryAssessment,
   getUserTimezone,
   createMemory, getMemoriesByPersonaId, countMemories, getMemoryTitles, deleteMemory, updateMemory,
-  getLatestMemoryBackfill, getMemoryBackfillById, setMemoryBackfillStatus,
+  getLatestMemoryBackfill, getMemoryBackfillById, setMemoryBackfillStatus, getBackfillCoverage,
   createFidelityFeedback, listFidelityFeedbackForMessage, listFidelityFeedbackForPersona,
   getMemoriesByFactKey, supersedeMemory, getMessageById,
   countDiaryEntries,
@@ -3981,7 +3981,22 @@ export const appRouter = router({
     backfillStatus: protectedProcedure
       .input(z.object({ personaId: z.number() }))
       .query(async ({ ctx, input }) => {
-        return getLatestMemoryBackfill(input.personaId, ctx.user.id);
+        // The coverage is the maximum across every run, so the interface
+        // can say how far the memories reach before the next one. The
+        // shape is the same whether a run exists or not.
+        const [latest, coveredUntil] = await Promise.all([
+          getLatestMemoryBackfill(input.personaId, ctx.user.id),
+          getBackfillCoverage(input.personaId, ctx.user.id),
+        ]);
+        return {
+          status: latest?.status ?? null,
+          backfillId: latest?.id ?? null,
+          doneBatches: latest?.doneBatches ?? 0,
+          totalBatches: latest?.totalBatches ?? 0,
+          memoriesAdded: latest?.memoriesAdded ?? 0,
+          error: latest?.error ?? null,
+          coveredUntil,
+        };
       }),
 
     backfillCancel: protectedProcedure

@@ -556,6 +556,14 @@ export const memoryBackfills = pgTable("memory_backfills", {
   doneBatches: integer("doneBatches").default(0).notNull(),
   memoriesAdded: integer("memoriesAdded").default(0).notNull(),
   error: text("error"),
+  /**
+   * How far this run's memories reach: the time of the last message in
+   * the last batch it actually read. The interface shows the maximum
+   * across the persona's runs before a new one, so the user uploads
+   * only what comes after it instead of paying for the same
+   * conversations twice.
+   */
+  coveredUntil: timestamp("coveredUntil"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (table) => ({

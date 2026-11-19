@@ -327,6 +327,8 @@ export const en = {
         uploading: "Uploading…",
         uploadDone: "Uploaded — it is selected for you",
         uploadBadType: "Only txt / csv chat logs are supported",
+        coveredUntil: "Memories already reach {{date}}",
+        coveredHint: "Upload only what comes after that date, so nothing is extracted twice.",
         noFiles: "No chat log files (txt / csv) uploaded yet. You can upload one right below.",
         costNote: "About {{calls}} calls to your configured model, billed by your provider.",
         previewing: "Counting…",

@@ -326,6 +326,8 @@ export const zh = {
         uploading: "上传中…",
         uploadDone: "上传完成，已自动选中",
         uploadBadType: "只支持 txt / csv 聊天记录文件",
+        coveredUntil: "已有记忆覆盖至 {{date}}",
+        coveredHint: "建议只上传这个时间之后的新记录，避免重复提取。",
         noFiles: "还没有上传过聊天记录文件（txt / csv）。可以直接在下面上传一份。",
         costNote: "预计调用 {{calls}} 次你配置的模型，费用由你的服务商计。",
         previewing: "正在统计…",

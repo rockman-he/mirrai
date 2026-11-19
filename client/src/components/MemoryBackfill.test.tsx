@@ -35,7 +35,7 @@ const invalidateFiles = vi.fn().mockImplementation(() => {
 });
 
 let preview: { messages: number; batches: number; estimatedCalls: number } | undefined;
-let status: { status: string; doneBatches: number; totalBatches: number; memoriesAdded: number; error: string | null } | null = null;
+let status: { status: string | null; backfillId: number | null; doneBatches: number; totalBatches: number; memoriesAdded: number; error: string | null; coveredUntil: string | null } | null = null;
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
@@ -131,7 +131,7 @@ describe("the memory backfill panel", () => {
   });
 
   it("shows the progress of a running job and can stop it", () => {
-    status = { status: "running", doneBatches: 12, totalBatches: 79, memoriesAdded: 104, error: null };
+    status = { status: "running", backfillId: 77, doneBatches: 12, totalBatches: 79, memoriesAdded: 104, error: null, coveredUntil: null };
     render(<MemoryBackfill personaId={1} onClose={() => {}} />);
     expect(screen.getByText("提取中：12/79 批")).toBeInTheDocument();
     expect(screen.getByText("已提取 104 条记忆")).toBeInTheDocument();
@@ -141,7 +141,7 @@ describe("the memory backfill panel", () => {
   });
 
   it("offers to pick a failed run up again", () => {
-    status = { status: "failed", doneBatches: 12, totalBatches: 79, memoriesAdded: 104, error: "provider down" };
+    status = { status: "failed", backfillId: 77, doneBatches: 12, totalBatches: 79, memoriesAdded: 104, error: "provider down", coveredUntil: null };
     render(<MemoryBackfill personaId={1} onClose={() => {}} />);
     expect(screen.getByText("提取失败：provider down")).toBeInTheDocument();
     screen.getByRole("button", { name: "继续提取" }).click();
@@ -149,7 +149,7 @@ describe("the memory backfill panel", () => {
   });
 
   it("says a finished run is finished", () => {
-    status = { status: "done", doneBatches: 79, totalBatches: 79, memoriesAdded: 612, error: null };
+    status = { status: "done", backfillId: 77, doneBatches: 79, totalBatches: 79, memoriesAdded: 612, error: null, coveredUntil: null };
     render(<MemoryBackfill personaId={1} onClose={() => {}} />);
     expect(screen.getByText("提取完成，共写入 612 条记忆。")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "继续提取" })).not.toBeInTheDocument();
@@ -198,5 +198,20 @@ describe("uploading a local file from the panel", () => {
     await pickLocal(file);
 
     expect(uploadMutate).not.toHaveBeenCalled();
+  });
+});
+
+describe("the coverage reminder", () => {
+  it("shows how far the memories already reach", () => {
+    status = { status: "done", backfillId: 77, doneBatches: 79, totalBatches: 79, memoriesAdded: 612, error: null, coveredUntil: "2026-11-18T10:00:00.000Z" };
+    render(<MemoryBackfill personaId={1} onClose={() => {}} />);
+    expect(screen.getByText(/已有记忆覆盖至/)).toBeInTheDocument();
+    expect(screen.getByText(/建议只上传这个时间之后的新记录/)).toBeInTheDocument();
+  });
+
+  it("says nothing about coverage when there is none", () => {
+    status = { status: "done", backfillId: 77, doneBatches: 79, totalBatches: 79, memoriesAdded: 612, error: null, coveredUntil: null };
+    render(<MemoryBackfill personaId={1} onClose={() => {}} />);
+    expect(screen.queryByText(/已有记忆覆盖至/)).not.toBeInTheDocument();
   });
 });
