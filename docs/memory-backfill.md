@@ -2,7 +2,7 @@
 
 > 让分身不仅"说话像"，还记得**真正发生过什么**。
 >
-> 实现时间：2026-11-19 · 提交：`a4c0022`（功能）、`38bcd09`（面板上传）、`f2425c0`（覆盖提醒）
+> 实现时间：2026-11-19 · 提交：`a4c0022`（功能）、`38bcd09`（面板上传）、`f2425c0`（覆盖提醒）、`eeef090`（删除文件）
 > 验证：6.3 万条真实聊天记录全流程通过 · 全量测试零新增失败
 
 ---
@@ -55,6 +55,7 @@
 | 覆盖提醒 | 面板显示「已有记忆覆盖至 X 日」——**取所有任务行的最大覆盖时间**，建议只上传该日期之后的新记录 |
 | 运行中 | 进度条（done/total 批）+ 已提取条数，每 3 秒轮询；随时取消 |
 | 中断/失败 | 进度保留，按钮变「继续提取」，从断点批接着跑（分批确定性：同一文件切出的批次完全一致） |
+| 删除文件 | 选中文件后点「**删除所选文件**」→ 弹窗显示文件名确认。**已提取的记忆不受影响**（记忆是独立数据行）；但以后重新蒸馏不再使用该文件内容 |
 | 之后 | 什么都不用做——日常聊天的每轮检索自动召回新记忆，有 top-K 上限不会撑爆 prompt |
 
 **操作纪律**：
@@ -161,8 +162,8 @@
 server/chat/log-parse.ts        解析 + 分批（纯函数）
 server/chat/memory-backfill.ts  编排器 + 两个带校验入口 + previewBackfill
 server/chat/memory-extract.ts   extractMemories（promptOverride / withTimestamps / history）
-server/routers.ts               memory.backfill* 五端点
-server/db.ts                    memoryBackfills CRUD + getBackfillCoverage
+server/routers.ts               memory.backfill* 五端点 + file.delete（仅限聊天记录类型）
+server/db.ts                    memoryBackfills CRUD + getBackfillCoverage + deletePersonaFile
 server/storage.ts               storageReadText
 drizzle/0044_*.sql / 0045_*.sql 建表 + coveredUntil
 client/src/components/MemoryBackfill.tsx  面板（预估/进度/上传/续跑）
