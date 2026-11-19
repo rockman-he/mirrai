@@ -2726,6 +2726,23 @@ export async function getBackfillCoverage(personaId: number, userId: number): Pr
   return rows[0]?.at ?? null;
 }
 
+/**
+ * Deletes one uploaded file, and gives back the key of the bytes to
+ * remove.
+ *
+ * The memories the file produced are rows of their own and go nowhere —
+ * the caller deletes the *source* only. Null means there was nothing
+ * with that id for this user, and nothing was deleted.
+ */
+export async function deletePersonaFile(id: number, userId: number): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.delete(personaFiles)
+    .where(and(eq(personaFiles.id, id), eq(personaFiles.userId, userId)))
+    .returning({ fileKey: personaFiles.fileKey });
+  return rows[0]?.fileKey ?? null;
+}
+
 export async function setMemoryBackfillStatus(
   id: number,
   userId: number,

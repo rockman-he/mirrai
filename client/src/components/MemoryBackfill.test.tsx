@@ -18,6 +18,7 @@ const startMutate = vi.fn();
 const cancelMutate = vi.fn();
 const resumeMutate = vi.fn();
 const uploadMutate = vi.fn();
+const deleteMutate = vi.fn();
 
 let files = [
   { id: 1, personaId: 1, fileType: "chat_txt", originalName: "full-log.txt", fileSize: 3_900_000 },
@@ -56,6 +57,15 @@ vi.mock("@/lib/trpc", () => ({
           isPending: false,
         }),
       },
+      delete: {
+        useMutation: (opts: any) => ({
+          mutate: (input: any) => {
+            deleteMutate(input);
+            if (opts?.onSuccess) opts.onSuccess({ success: true }, input);
+          },
+          isPending: false,
+        }),
+      },
     },
     memory: {
       backfillPreview: {
@@ -75,6 +85,11 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
+const confirmState = vi.hoisted(() => ({ value: true }));
+vi.mock("@/components/ConfirmDialog", () => ({
+  useConfirm: () => async () => confirmState.value,
+}));
+
 vi.mock("@/contexts/LocaleContext", () => ({
   useLocale: () => ({
     t: (key: any, params?: any) => translate("zh", key, params),
@@ -85,7 +100,8 @@ vi.mock("@/contexts/LocaleContext", () => ({
 import { MemoryBackfill } from "./MemoryBackfill";
 
 beforeEach(() => {
-  for (const fn of [invalidate, invalidateFiles, startMutate, cancelMutate, resumeMutate, uploadMutate]) fn.mockClear();
+  for (const fn of [invalidate, invalidateFiles, startMutate, cancelMutate, resumeMutate, uploadMutate, deleteMutate]) fn.mockClear();
+  confirmState.value = true;
   invalidateFiles.mockClear();
   invalidateFiles.mockImplementation(() => {
     files = [...files, { id: 9, personaId: 1, fileType: "chat_txt", originalName: "uploaded.txt", fileSize: 100 }];
@@ -213,5 +229,37 @@ describe("the coverage reminder", () => {
     status = { status: "done", backfillId: 77, doneBatches: 79, totalBatches: 79, memoriesAdded: 612, error: null, coveredUntil: null };
     render(<MemoryBackfill personaId={1} onClose={() => {}} />);
     expect(screen.queryByText(/已有记忆覆盖至/)).not.toBeInTheDocument();
+  });
+});
+
+describe("deleting a chat log from the panel", () => {
+  it("deletes the chosen file after the confirm", async () => {
+    const user = userEvent.setup();
+    render(<MemoryBackfill personaId={1} onClose={() => {}} />);
+    const select = screen.getByRole("combobox") as HTMLSelectElement;
+    await user.selectOptions(select, "1");
+    await user.click(screen.getByRole("button", { name: "删除所选文件" }));
+
+    expect(deleteMutate).toHaveBeenCalledWith({ personaId: 1, fileId: 1 });
+    // The list no longer holds the file, and the selection moves on.
+    await waitFor(() => {
+      expect(invalidateFiles).toHaveBeenCalled();
+      expect((screen.getByRole("combobox") as HTMLSelectElement).value).not.toBe("1");
+    });
+  });
+
+  it("does not delete when the confirm is refused", async () => {
+    confirmState.value = false;
+    const user = userEvent.setup();
+    render(<MemoryBackfill personaId={1} onClose={() => {}} />);
+    await user.click(screen.getByRole("button", { name: "删除所选文件" }));
+
+    expect(deleteMutate).not.toHaveBeenCalled();
+  });
+
+  it("disables deleting while a run is going", () => {
+    status = { status: "running", backfillId: 77, doneBatches: 12, totalBatches: 79, memoriesAdded: 104, error: null, coveredUntil: null };
+    render(<MemoryBackfill personaId={1} onClose={() => {}} />);
+    expect(screen.queryByRole("button", { name: "删除所选文件" })).not.toBeInTheDocument();
   });
 });

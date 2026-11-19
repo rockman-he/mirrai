@@ -7,7 +7,7 @@ import { withPersonaDataLock } from "./_core/lock";
 import { requestAbortSignal } from "./_core/context";
 import { extractMemories } from "./chat/memory-extract";
 import { previewBackfill, resumeMemoryBackfill, startBackfillFromFile } from "./chat/memory-backfill";
-import { storageReadText } from "./storage";
+import { storageReadText, storageDelete } from "./storage";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router, rateLimit } from "./_core/trpc";
 import { z } from "zod";
@@ -38,6 +38,7 @@ import {
   getUserTimezone,
   createMemory, getMemoriesByPersonaId, countMemories, getMemoryTitles, deleteMemory, updateMemory,
   getLatestMemoryBackfill, getMemoryBackfillById, setMemoryBackfillStatus, getBackfillCoverage,
+  deletePersonaFile,
   createFidelityFeedback, listFidelityFeedbackForMessage, listFidelityFeedbackForPersona,
   getMemoriesByFactKey, supersedeMemory, getMessageById,
   countDiaryEntries,
@@ -1763,6 +1764,32 @@ export const appRouter = router({
         const persona = await getPersonaById(input.personaId, ctx.user.id);
         if (!persona) throw new TRPCError({ code: "NOT_FOUND" });
         return getFilesByPersonaId(input.personaId, ctx.user.id);
+      }),
+
+    /**
+     * Deletes one uploaded chat log.
+     *
+     * The memories extracted from it are rows of their own and go
+     * nowhere — the file is only the source. Restricted to chat logs:
+     * the interface that offers the delete is the backfill's, and a
+     * photograph has no way in here to be deleted by accident.
+     */
+    delete: protectedProcedure
+      .input(z.object({ personaId: z.number(), fileId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const file = await getPersonaFileById(input.fileId, ctx.user.id);
+        if (!file || file.personaId !== input.personaId) {
+          throw new TRPCError({ code: "NOT_FOUND" });
+        }
+        if (file.fileType !== "chat_txt" && file.fileType !== "chat_csv") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: copy(ctx.locale, "errors.fileDeleteNotChat") });
+        }
+        const fileKey = await deletePersonaFile(input.fileId, ctx.user.id);
+        if (!fileKey) throw new TRPCError({ code: "NOT_FOUND" });
+        // The bytes go best-effort: the row is already gone, and a file
+        // left on disk is the lesser evil over failing the deletion.
+        await storageDelete(fileKey).catch(() => undefined);
+        return { success: true };
       }),
   }),
 

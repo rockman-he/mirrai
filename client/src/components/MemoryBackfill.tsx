@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLocale } from "@/contexts/LocaleContext";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { X } from "lucide-react";
@@ -92,6 +93,40 @@ export function MemoryBackfill({ personaId, onClose }: { personaId: number; onCl
     } catch {
       /* the mutation's onError already said what happened */
     }
+  };
+
+  /**
+   * Deleting a log the panel no longer needs.
+   *
+   * The memories it produced are rows of their own and go nowhere — the
+   * file is only the *source*, and the run that read it is done with it.
+   * The dialog names the file, and says what is true about the one
+   * thing that is lost: a later distillation will not see it again.
+   */
+  const confirm = useConfirm();
+  const del = trpc.file.delete.useMutation({
+    onSuccess: (_data: any, vars: any) => {
+      utils.file.list.invalidate().catch(() => undefined);
+      // The selection moves to the next file left, rather than pointing
+      // at the one that is gone.
+      setFileId((prev) =>
+        prev === vars.fileId ? (chatFiles.filter((f: any) => f.id !== vars.fileId)[0]?.id ?? null) : prev,
+      );
+      toast.success(t("chat.memory.backfill.deleteDone"));
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleDelete = async () => {
+    const file = chatFiles.find((f: any) => f.id === fileId);
+    if (!file) return;
+    const ok = await confirm({
+      title: t("chat.memory.backfill.deleteConfirmTitle"),
+      description: t("chat.memory.backfill.deleteConfirmBody", { name: file.originalName }),
+      destructive: true,
+    });
+    if (!ok) return;
+    del.mutate({ personaId, fileId: file.id });
   };
 
   const start = trpc.memory.backfillStart.useMutation({
@@ -205,6 +240,16 @@ export function MemoryBackfill({ personaId, onClose }: { personaId: number; onCl
                     className="w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-foreground"
                   />
                 </label>
+
+                {fileId != null && chatFiles.some((f: any) => f.id === fileId) && (
+                  <button
+                    onClick={handleDelete}
+                    disabled={del.isPending}
+                    className="text-xs text-muted-foreground hover:text-destructive transition-colors w-fit disabled:opacity-50"
+                  >
+                    {del.isPending ? t("chat.memory.backfill.deleting") : t("chat.memory.backfill.deleteFile")}
+                  </button>
+                )}
 
                 {previewing ? (
                   <div className="text-xs text-muted-foreground">{t("chat.memory.backfill.previewing")}</div>
